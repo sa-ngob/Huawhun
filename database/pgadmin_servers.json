@@ -1,0 +1,15 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "HANOI LAB DB (Local Docker)",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "hanoi_lab",
+      "Username": "hanoi_user",
+      "Password": "hanoi_pass_2026",
+      "SSLMode": "prefer",
+      "Comment": "PostgreSQL via Docker Compose"
+    }
+  }
+}
