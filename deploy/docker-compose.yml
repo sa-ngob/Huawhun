@@ -1,0 +1,76 @@
+services:
+  # ───────────────────────────────────────────────────────────────
+  # App — React SPA served by Nginx
+  # ───────────────────────────────────────────────────────────────
+  app:
+    build:
+      context: ..          # project root (where Dockerfile lives)
+      dockerfile: Dockerfile
+    container_name: hanoi_lab_app
+    image: hanoi-lab-app:latest
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:80"   # Hostinger: change if using Traefik/proxy
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - hanoi_internal
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/index.html || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    labels:
+      # ── Traefik labels (uncomment if using Traefik on Hostinger) ──
+      # - "traefik.enable=true"
+      # - "traefik.http.routers.hanoi.rule=Host(`${DOMAIN}`)"
+      # - "traefik.http.routers.hanoi.entrypoints=websecure"
+      # - "traefik.http.routers.hanoi.tls.certresolver=le"
+      # - "traefik.http.services.hanoi.loadbalancer.server.port=80"
+      - "com.hanoi.description=HANOI LAB PRO - React App"
+
+  # ───────────────────────────────────────────────────────────────
+  # Database — PostgreSQL 16
+  # ───────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: hanoi_lab_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-hanoi_lab}
+      POSTGRES_USER:     ${POSTGRES_USER:-hanoi_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../database/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+      - ../database/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+    networks:
+      - hanoi_internal
+    # ── DB NOT exposed publicly (internal only) ──
+    # Uncomment only for maintenance via SSH tunnel:
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hanoi_user} -d ${POSTGRES_DB:-hanoi_lab}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    labels:
+      - "com.hanoi.description=HANOI LAB PRO - PostgreSQL 16"
+
+# ───────────────────────────────────────────────────────────────
+# Volumes & Networks
+# ───────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+    name: hanoi_lab_postgres_data
+
+networks:
+  hanoi_internal:
+    name: hanoi_lab_network
+    driver: bridge

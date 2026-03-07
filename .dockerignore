@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.gitignore
+*.log
+*.txt
+.env
+.env.*
+!.env.example
+deploy/pgadmin_servers.json
+README.md
+guide.md
+CLAUDE.md
