@@ -10,7 +10,7 @@ services:
     image: hanoi-lab-app:latest
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8080}:80"   # Hostinger: change if using Traefik/proxy
+      - "${APP_PORT:-8585}:80"   # Hostinger: change if using Traefik/proxy
     depends_on:
       db:
         condition: service_healthy
