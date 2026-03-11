@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   Plus, Trash2, History,
   TrendingUp, Layers,
@@ -21,6 +21,26 @@ const INITIAL_HISTORICAL = [
 ];
 
 const PAIR_MAP = { 0: 2, 1: 7, 2: 0, 3: 8, 4: 5, 5: 4, 6: 9, 7: 1, 8: 3, 9: 6 };
+
+/* ──────────────── LOCAL STORAGE HOOK ──────────────── */
+function useLocalStorage(key, initialValue) {
+  const [storedValue, setStoredValue] = useState(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch { return initialValue; }
+  });
+
+  const setValue = useCallback((value) => {
+    try {
+      const valueToStore = value instanceof Function ? value(storedValue) : value;
+      setStoredValue(valueToStore);
+      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+    } catch (e) { console.warn('localStorage error:', e); }
+  }, [key, storedValue]);
+
+  return [storedValue, setValue];
+}
 
 const getSingleDigit = (num) => {
   if (num < 10) return num;
@@ -684,18 +704,19 @@ function BacktestTab({ historicalData, setHistoricalData, backtestStats, formula
 
 /* ──────────────── MAIN APP ──────────────── */
 export default function App() {
-  const [historicalData, setHistoricalData] = useState(INITIAL_HISTORICAL);
-  const [activeTab, setActiveTab] = useState('daily');
-  const [formulas, setFormulas] = useState([
+  // ── Persisted state (saved to localStorage automatically) ──
+  const [historicalData, setHistoricalData] = useLocalStorage('hanoi_historical', INITIAL_HISTORICAL);
+  const [formulas, setFormulas] = useLocalStorage('hanoi_formulas', [
     { id: 'f1', name: 'สูตรหลัก (ล่าง)', expression: '[B1] + [B2]' },
     { id: 'f2', name: 'สูตรเน้นบน', expression: '[T1] + [T3]' },
   ]);
-  const [activeFormulaId, setActiveFormulaId] = useState('f1');
-
-  const [results, setResults] = useState([
+  const [activeFormulaId, setActiveFormulaId] = useLocalStorage('hanoi_activeFormula', 'f1');
+  const [results, setResults] = useLocalStorage('hanoi_results', [
     { id: 1, formulaId: 'f1', date: '2026-02-11', tvTop: '445', tvBottom: '22', special: '114-00', normal: '552-32', vip: '', sum: 4, finalDigit: 4, swipe: '4-5' },
   ]);
 
+  // ── Non-persisted (UI state) ──
+  const [activeTab, setActiveTab] = useState('daily');
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     tvTop: '', tvBottom: '', special: '', normal: '', vip: ''
