@@ -18,6 +18,7 @@ services:
       - n8n_default
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=n8n_default"
       - "traefik.http.routers.huawhun.rule=Host(`huawhun.aidev.business`)"
       - "traefik.http.routers.huawhun.entrypoints=websecure"
       - "traefik.http.routers.huawhun.tls=true"
