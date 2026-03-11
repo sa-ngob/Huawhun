@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { api, dbToResult, dbToHistorical, dbToFormula } from './api';
 import {
   Plus, Trash2, History,
   TrendingUp, Layers,
@@ -22,25 +23,7 @@ const INITIAL_HISTORICAL = [
 
 const PAIR_MAP = { 0: 2, 1: 7, 2: 0, 3: 8, 4: 5, 5: 4, 6: 9, 7: 1, 8: 3, 9: 6 };
 
-/* ──────────────── LOCAL STORAGE HOOK ──────────────── */
-function useLocalStorage(key, initialValue) {
-  const [storedValue, setStoredValue] = useState(() => {
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
-    } catch { return initialValue; }
-  });
-
-  const setValue = useCallback((value) => {
-    try {
-      const valueToStore = value instanceof Function ? value(storedValue) : value;
-      setStoredValue(valueToStore);
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
-    } catch (e) { console.warn('localStorage error:', e); }
-  }, [key, storedValue]);
-
-  return [storedValue, setValue];
-}
+/* ──────────────── REMOVED LOCAL STORAGE HOOK ──────────────── */
 
 const getSingleDigit = (num) => {
   if (num < 10) return num;
@@ -285,17 +268,23 @@ function WinRateCard({ stats }) {
 function FormulaEditor({ formulas, setFormulas, activeFormulaId, setActiveFormulaId }) {
   const current = formulas.find(f => f.id === activeFormulaId) || formulas[0];
 
-  const addFormula = () => {
+  const handleUpdate = async (updatedF) => {
+    try { await api.upsertFormula({ ...updatedF, sortOrder: formulas.findIndex(f => f.id === updatedF.id) || 0 }); } catch (e) { console.error(e); }
+  };
+
+  const addFormula = async () => {
     const newF = { id: `f${Date.now()}`, name: 'สูตรใหม่', expression: '[B1]+[B2]' };
     setFormulas([...formulas, newF]);
     setActiveFormulaId(newF.id);
+    try { await api.upsertFormula({ ...newF, sortOrder: formulas.length }); } catch(e) { console.error(e); }
   };
 
-  const removeFormula = (id) => {
+  const removeFormula = async (id) => {
     if (formulas.length <= 1) return;
     const next = formulas.filter(f => f.id !== id);
     setFormulas(next);
     if (activeFormulaId === id) setActiveFormulaId(next[0].id);
+    try { await api.deleteFormula(id); } catch(e) { console.error(e); }
   };
 
   return (
@@ -337,6 +326,7 @@ function FormulaEditor({ formulas, setFormulas, activeFormulaId, setActiveFormul
               type="text"
               value={current?.name || ''}
               onChange={e => setFormulas(formulas.map(f => f.id === activeFormulaId ? { ...f, name: e.target.value } : f))}
+              onBlur={() => handleUpdate(current)}
               placeholder="ชื่อสูตร"
               className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300 outline-none transition-all"
             />
@@ -345,6 +335,7 @@ function FormulaEditor({ formulas, setFormulas, activeFormulaId, setActiveFormul
                 type="text"
                 value={current?.expression || ''}
                 onChange={e => setFormulas(formulas.map(f => f.id === activeFormulaId ? { ...f, expression: e.target.value } : f))}
+                onBlur={() => handleUpdate(current)}
                 placeholder="[B1]+[B2]"
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 font-mono text-lg font-bold text-indigo-700 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300 outline-none transition-all pr-36"
               />
@@ -365,24 +356,36 @@ function DailyTab({ results, setResults, formulas, activeFormulaId, formData, se
   const currentFormula = formulas.find(f => f.id === activeFormulaId) || formulas[0];
   const [editTarget, setEditTarget] = useState(null); // { id, date, special, normal, vip, swipe }
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!formData.tvTop || !formData.tvBottom) return;
     const sum = evaluateFormula(formData.tvTop, formData.tvBottom, currentFormula.expression);
     const digit = getSingleDigit(sum);
     const swipe = `${digit}-${PAIR_MAP[digit]}`;
-    setResults([{
-      id: Date.now(),
+    
+    const newEntry = {
       formulaId: activeFormulaId,
       ...formData,
       sum, finalDigit: digit, swipe
-    }, ...results]);
-    setFormData(d => ({ ...d, tvTop: '', tvBottom: '', special: '', normal: '', vip: '' }));
+    };
+    try {
+      const saved = await api.addDailyResult(newEntry);
+      setResults([saved, ...results]);
+      setFormData(d => ({ ...d, tvTop: '', tvBottom: '', special: '', normal: '', vip: '' }));
+    } catch(e) { console.error(e); }
   };
 
-  const handlePrizeSave = (newPrizes) => {
-    setResults(rs => rs.map(r =>
-      r.id === editTarget.id ? { ...r, ...newPrizes } : r
-    ));
+  const handlePrizeSave = async (newPrizes) => {
+    try {
+      await api.updateDailyResult(editTarget.id, newPrizes);
+      setResults(rs => rs.map(r => r.id === editTarget.id ? { ...r, ...newPrizes } : r));
+    } catch(e) { console.error(e); }
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await api.deleteDailyResult(id);
+      setResults(r => r.filter(x => x.id !== id));
+    } catch(e) { console.error(e); }
   };
 
   const [showForm, setShowForm] = useState(true);
@@ -522,7 +525,7 @@ function DailyTab({ results, setResults, formulas, activeFormulaId, formData, se
                           )}
                         </td>
                         <td className="px-5 py-4 text-right">
-                          <button onClick={() => setResults(r => r.filter(x => x.id !== res.id))}
+                          <button onClick={() => handleDelete(res.id)}
                             className="text-slate-200 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -575,19 +578,27 @@ function BacktestTab({ historicalData, setHistoricalData, backtestStats, formula
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const parsed = parseCSV(ev.target.result);
-      if (parsed) setHistoricalData(parsed);
-      else alert('ไม่สามารถอ่านไฟล์ CSV ได้ กรุณาตรวจสอบ header: date,tvTop,tvBottom,special,normal,vip');
+      if (parsed) {
+        try {
+          await api.upsertHistoricalRows(parsed);
+          const fresh = await api.getHistoricalData();
+          setHistoricalData(fresh.map(dbToHistorical));
+        } catch(e) { console.error(e); }
+      } else alert('ไม่สามารถอ่านไฟล์ CSV ได้ กรุณาตรวจสอบ header: date,tvTop,tvBottom,special,normal,vip');
     };
     reader.readAsText(file, 'UTF-8');
     e.target.value = '';
   };
 
-  const handlePrizeSave = (newPrizes) => {
-    setHistoricalData(rows => rows.map(r =>
-      r.date === editTarget.date ? { ...r, ...newPrizes } : r
-    ));
+  const handlePrizeSave = async (newPrizes) => {
+    try {
+      await api.updateHistoricalPrizes(editTarget.date, newPrizes);
+      setHistoricalData(rows => rows.map(r =>
+        r.date === editTarget.date ? { ...r, ...newPrizes } : r
+      ));
+    } catch(e) { console.error(e); }
   };
 
   return (
@@ -704,23 +715,50 @@ function BacktestTab({ historicalData, setHistoricalData, backtestStats, formula
 
 /* ──────────────── MAIN APP ──────────────── */
 export default function App() {
-  // ── Persisted state (saved to localStorage automatically) ──
-  const [historicalData, setHistoricalData] = useLocalStorage('hanoi_historical', INITIAL_HISTORICAL);
-  const [formulas, setFormulas] = useLocalStorage('hanoi_formulas', [
-    { id: 'f1', name: 'สูตรหลัก (ล่าง)', expression: '[B1] + [B2]' },
-    { id: 'f2', name: 'สูตรเน้นบน', expression: '[T1] + [T3]' },
-  ]);
-  const [activeFormulaId, setActiveFormulaId] = useLocalStorage('hanoi_activeFormula', 'f1');
-  const [results, setResults] = useLocalStorage('hanoi_results', [
-    { id: 1, formulaId: 'f1', date: '2026-02-11', tvTop: '445', tvBottom: '22', special: '114-00', normal: '552-32', vip: '', sum: 4, finalDigit: 4, swipe: '4-5' },
-  ]);
+  const [historicalData, setHistoricalData] = useState([]);
+  const [formulas, setFormulas] = useState([]);
+  const [activeFormulaId, setActiveFormulaId] = useState('');
+  const [results, setResults] = useState([]);
+  const [isLoaded, setIsLoaded] = useState(false);
 
-  // ── Non-persisted (UI state) ──
   const [activeTab, setActiveTab] = useState('daily');
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     tvTop: '', tvBottom: '', special: '', normal: '', vip: ''
   });
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [dbFormulas, dbHistorical, dbResults, dbActiveId] = await Promise.all([
+          api.getFormulas(),
+          api.getHistoricalData(),
+          api.getDailyResults(),
+          api.getSetting('active_formula_id')
+        ]);
+        if (dbFormulas.length > 0) setFormulas(dbFormulas.map(dbToFormula));
+        if (dbHistorical.length > 0) setHistoricalData(dbHistorical.map(dbToHistorical));
+        if (dbResults.length > 0) setResults(dbResults.map(dbToResult));
+        if (dbActiveId) setActiveFormulaId(dbActiveId);
+        else if (dbFormulas.length > 0) setActiveFormulaId(dbFormulas[0].id);
+      } catch (err) {
+        console.error("API Error", err);
+      } finally {
+        setIsLoaded(true);
+      }
+    }
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    if (isLoaded && activeFormulaId) {
+      api.setSetting('active_formula_id', activeFormulaId).catch(console.error);
+    }
+  }, [activeFormulaId, isLoaded]);
+
+  if (!isLoaded) {
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-indigo-500 font-bold">กำลังเชื่อมต่อฐานข้อมูล...</div>;
+  }
 
   const currentFormula = formulas.find(f => f.id === activeFormulaId) || formulas[0];
 
