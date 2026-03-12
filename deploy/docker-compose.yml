@@ -1,76 +1,87 @@
 services:
-  # ───────────────────────────────────────────────────────────────
-  # App — React SPA served by Nginx
-  # ───────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────
+  # 🌐 App — React SPA (Nginx) — routed via Traefik
+  # ─────────────────────────────────────────────────────────────
   app:
-    build:
-      context: ..          # project root (where Dockerfile lives)
-      dockerfile: Dockerfile
+    image: ghcr.io/sa-ngob/huawhun:latest
     container_name: hanoi_lab_app
-    image: hanoi-lab-app:latest
-    restart: unless-stopped
-    ports:
-      - "${APP_PORT:-8585}:80"   # Hostinger: change if using Traefik/proxy
+    restart: always
+    expose:
+      - "80"
     depends_on:
-      db:
+      postgres:
+        condition: service_healthy
+      postgrest:
+        condition: service_started
+    networks:
+      - hanoi_net
+      - n8n_default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=n8n_default"
+      - "traefik.http.routers.huawhun.rule=Host(`huawhun.aidev.business`)"
+      - "traefik.http.routers.huawhun.entrypoints=websecure"
+      - "traefik.http.routers.huawhun.tls=true"
+      - "traefik.http.routers.huawhun.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.huawhun.loadbalancer.server.port=80"
+      # To ensure latest image is pulled when composing up with --pull always
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  # ─────────────────────────────────────────────────────────────
+  # 🔌 PostgREST — Auto REST API from PostgreSQL
+  # ─────────────────────────────────────────────────────────────
+  postgrest:
+    image: postgrest/postgrest:latest
+    container_name: hanoi_postgrest
+    restart: always
+    environment:
+      # MUST change PASSWORD!
+      PGRST_DB_URI:        "postgresql://aidev_techthai:${DB_PASSWORD}@postgres:5432/hanoi_lab"
+      PGRST_DB_SCHEMA:     "api"
+      PGRST_DB_ANON_ROLE:  "web_anon"
+      PGRST_SERVER_PORT:   "3000"
+      PGRST_LOG_LEVEL:     "error"
+    depends_on:
+      postgres:
         condition: service_healthy
     networks:
-      - hanoi_internal
-    environment:
-      - NODE_ENV=production
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/index.html || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    labels:
-      # ── Traefik labels (uncomment if using Traefik on Hostinger) ──
-      # - "traefik.enable=true"
-      # - "traefik.http.routers.hanoi.rule=Host(`${DOMAIN}`)"
-      # - "traefik.http.routers.hanoi.entrypoints=websecure"
-      # - "traefik.http.routers.hanoi.tls.certresolver=le"
-      # - "traefik.http.services.hanoi.loadbalancer.server.port=80"
-      - "com.hanoi.description=HANOI LAB PRO - React App"
+      - hanoi_net
 
-  # ───────────────────────────────────────────────────────────────
-  # Database — PostgreSQL 16
-  # ───────────────────────────────────────────────────────────────
-  db:
+  # ─────────────────────────────────────────────────────────────
+  # 🗄️  Database — PostgreSQL 16
+  # ─────────────────────────────────────────────────────────────
+  postgres:
     image: postgres:16-alpine
     container_name: hanoi_lab_db
-    restart: unless-stopped
+    restart: always
     environment:
-      POSTGRES_DB:       ${POSTGRES_DB:-hanoi_lab}
-      POSTGRES_USER:     ${POSTGRES_USER:-hanoi_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB:       hanoi_lab
+      POSTGRES_USER:     aidev_techthai
+      # MUST change PASSWORD!
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../database/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
-      - ../database/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+      - ./init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+      - ./seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
     networks:
-      - hanoi_internal
-    # ── DB NOT exposed publicly (internal only) ──
-    # Uncomment only for maintenance via SSH tunnel:
-    # ports:
-    #   - "127.0.0.1:5432:5432"
+      - hanoi_net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hanoi_user} -d ${POSTGRES_DB:-hanoi_lab}"]
+      test: ["CMD-SHELL", "pg_isready -U aidev_techthai -d hanoi_lab"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
-    labels:
-      - "com.hanoi.description=HANOI LAB PRO - PostgreSQL 16"
 
-# ───────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
 # Volumes & Networks
-# ───────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
 volumes:
   postgres_data:
     name: hanoi_lab_postgres_data
 
 networks:
-  hanoi_internal:
+  hanoi_net:
     name: hanoi_lab_network
     driver: bridge
+  n8n_default:
+    external: true
