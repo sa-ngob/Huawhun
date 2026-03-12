@@ -756,14 +756,11 @@ export default function App() {
     }
   }, [activeFormulaId, isLoaded]);
 
-  if (!isLoaded) {
-    return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-indigo-500 font-bold">กำลังเชื่อมต่อฐานข้อมูล...</div>;
-  }
-
   const currentFormula = formulas.find(f => f.id === activeFormulaId) || formulas[0];
 
   const backtestStats = useMemo(() => {
     let hits = 0;
+    if (!currentFormula) return { total: 0, hits: 0, accuracy: '0.0', rows: [] };
     const rows = historicalData.map(day => {
       const sum = evaluateFormula(day.tvTop, day.tvBottom, currentFormula.expression);
       const digit = getSingleDigit(sum);
@@ -784,6 +781,10 @@ export default function App() {
     { id: 'daily',    label: 'บันทึกประจำวัน', icon: <History className="w-4 h-4" /> },
     { id: 'backtest', label: 'ทดลองหาสูตร',     icon: <FlaskConical className="w-4 h-4" /> },
   ];
+
+  if (!isLoaded) {
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-indigo-500 font-bold">กำลังเชื่อมต่อฐานข้อมูล...</div>;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-100">
